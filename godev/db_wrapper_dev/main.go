@@ -57,7 +57,7 @@ func (d *DBInsance) Put(key uint64, data any) error {
 	})
 }
 
-func GetAs[T any](db *DBInsance, key uint64) (T, error) {
+func GetAs[T any](db *DBInsance, key uint64) (T, bool, error) {
 	var data T
 	var rawData []byte
 
@@ -66,18 +66,18 @@ func GetAs[T any](db *DBInsance, key uint64) (T, error) {
 		rawData = tx.Bucket(bucketName).Get(k[:])
 		return nil
 	}); err != nil {
-		return data, err
+		return data, false, err
 	}
 
 	if rawData == nil {
-		return data, nil
+		return data, false, nil
 	}
 
 	if err := cbor.Unmarshal(rawData, &data); err != nil {
-		return data, err
+		return data, false, err
 	}
 
-	return data, nil
+	return data, true, nil
 }
 
 type SomeStruct struct {
@@ -103,22 +103,28 @@ func main() {
 		},
 	})
 
-	if d, err := GetAs[SomeStruct](db, 1); err != nil {
+	if d, found, err := GetAs[SomeStruct](db, 1); err != nil {
 		log.Panic(err)
 	} else {
-		log.Printf("%+v", d)
+		log.Printf("%v %+v", found, d)
 	}
 
-	if d, err := GetAs[*SomeStruct](db, 1); err != nil {
+	if d, found, err := GetAs[*SomeStruct](db, 1); err != nil {
 		log.Panic(err)
 	} else {
-		log.Printf("%+v", d)
+		log.Printf("%v %+v", found, d)
 	}
 
-	if d, err := GetAs[*SomeStruct](db, 2); err != nil {
+	if d, found, err := GetAs[SomeStruct](db, 2); err != nil {
 		log.Panic(err)
 	} else {
-		log.Printf("%+v", d)
+		log.Printf("%v %+v", found, d)
+	}
+
+	if d, found, err := GetAs[*SomeStruct](db, 2); err != nil {
+		log.Panic(err)
+	} else {
+		log.Printf("%v %+v", found, d)
 	}
 }
 
