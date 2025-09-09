@@ -3,6 +3,7 @@ package bucketproxy
 import (
 	"cmp"
 	"iter"
+	"log/slog"
 	"slices"
 
 	"github.com/google/btree"
@@ -24,7 +25,12 @@ type proxyVal[K cmp.Ordered, V any] struct {
 	exists bool
 }
 
-func New[K cmp.Ordered, V any](bucket *bolt.Bucket, serializeK func(*K) []byte, deserializeK func([]byte) K, serializeV func(*V) []byte, deserializeV func([]byte) V) BucketProxy[K, V] {
+func New[K cmp.Ordered, V any](
+	bucket *bolt.Bucket,
+	serializeK func(*K) []byte,
+	deserializeK func([]byte) K,
+	serializeV func(*V) []byte,
+	deserializeV func([]byte) V) BucketProxy[K, V] {
 	return BucketProxy[K, V]{
 		bucket,
 		btree.NewG(64, func(a *proxyVal[K, V], b *proxyVal[K, V]) bool {
@@ -46,6 +52,11 @@ func (bp *BucketProxy[K, V]) Get(key K) *V {
 			return val.data
 		}
 	}
+
+	if bp.bucket == nil {
+		return nil
+	}
+
 	bd := bp.bucket.Get(bp.serializeK(&key))
 	if bd == nil {
 		return nil
@@ -62,7 +73,13 @@ func (bp *BucketProxy[K, V]) Put(key K, data *V) {
 	bp.proxy.ReplaceOrInsert(&proxyVal[K, V]{key, data, true})
 }
 
+func emptyIterator(yield func([]byte, []byte) bool) {}
+
 func (bp *BucketProxy[K, V]) bucketAscendRange(greaterOrEqual, lessThan []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Seek(greaterOrEqual)
 	return func(yield func([]byte, []byte) bool) {
@@ -97,6 +114,10 @@ func (bp *BucketProxy[K, V]) AscendRange(greaterOrEqual, lessThan K) iter.Seq2[K
 }
 
 func (bp *BucketProxy[K, V]) bucketAscend() iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.First()
 	return func(yield func([]byte, []byte) bool) {
@@ -125,6 +146,10 @@ func (bp *BucketProxy[K, V]) Ascend() iter.Seq2[K, *V] {
 }
 
 func (bp *BucketProxy[K, V]) bucketDescend() iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Last()
 	return func(yield func([]byte, []byte) bool) {
@@ -153,6 +178,10 @@ func (bp *BucketProxy[K, V]) Descend() iter.Seq2[K, *V] {
 }
 
 func (bp *BucketProxy[K, V]) bucketAscendGreaterOrEqual(greaterOrEqual []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Seek(greaterOrEqual)
 	return func(yield func([]byte, []byte) bool) {
@@ -184,6 +213,10 @@ func (bp *BucketProxy[K, V]) AscendGreaterOrEqual(greaterOrEqual K) iter.Seq2[K,
 }
 
 func (bp *BucketProxy[K, V]) bucketAscendLessThan(lessThan []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.First()
 	return func(yield func([]byte, []byte) bool) {
@@ -217,6 +250,10 @@ func (bp *BucketProxy[K, V]) AscendLessThan(lessThan K) iter.Seq2[K, *V] {
 }
 
 func (bp *BucketProxy[K, V]) bucketDescendRange(lessOrEqual, greaterThan []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Seek(lessOrEqual)
 
@@ -260,6 +297,10 @@ func (bp *BucketProxy[K, V]) DescendRange(lessOrEqual, greaterThan K) iter.Seq2[
 }
 
 func (bp *BucketProxy[K, V]) bucketDescendGreaterThan(greaterThan []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Last()
 
@@ -294,6 +335,10 @@ func (bp *BucketProxy[K, V]) DescendGreaterThan(greaterThan K) iter.Seq2[K, *V] 
 }
 
 func (bp *BucketProxy[K, V]) bucketDescendLessOrEqual(lessOrEqual []byte) iter.Seq2[[]byte, []byte] {
+	if bp.bucket == nil {
+		return emptyIterator
+	}
+
 	c := bp.bucket.Cursor()
 	nextK, nextV := c.Seek(lessOrEqual)
 
@@ -402,4 +447,24 @@ func compare[T cmp.Ordered](a, b T) int {
 	} else {
 		return 1
 	}
+}
+
+func (bp *BucketProxy[K, V]) WriteProxyToDb(bucket *bolt.Bucket) error {
+	for e := range bp.proxyAscend() {
+		if e.exists {
+			slog.Debug("BucketProxy: writing to db", "key", e.key)
+			err := bucket.Put(bp.serializeK(&e.key), bp.serializeV(e.data))
+			if err != nil {
+				return err
+			}
+		} else {
+			slog.Debug("BucketProxy: deleting from db", "key", e.key)
+			err := bucket.Delete(bp.serializeK(&e.key))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

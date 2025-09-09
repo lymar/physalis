@@ -88,6 +88,90 @@ func TestBucketProxyBase(t *testing.T) {
 	}
 }
 
+func TestBucketProxyNilIter(t *testing.T) {
+	bp := New[uint64, string](
+		nil,
+		serializeUint64,
+		deserializeUint64,
+		serializeString,
+		deserializeString)
+	bp.Put(10, mkptp("ten"))
+	bp.Put(20, mkptp("twenty"))
+	bp.Put(30, mkptp("thirty"))
+
+	if v := bp.Get(10); *v != "ten" {
+		t.Errorf("unexpected value for key 10: %v", v)
+	}
+
+	if v := bp.Get(11); v != nil {
+		t.Errorf("unexpected value for key 11: %v", v)
+	}
+
+	brRes := readFromBPIterator(bp.AscendRange(10, 30))
+
+	if !slices.Equal(brRes, []testPair{
+		{10, "ten"},
+		{20, "twenty"}}) {
+
+		t.Errorf("AscendRange: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.Ascend())
+	if !slices.Equal(brRes, []testPair{
+		{10, "ten"},
+		{20, "twenty"},
+		{30, "thirty"}}) {
+
+		t.Errorf("Ascend: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.Descend())
+	if !slices.Equal(brRes, []testPair{
+		{30, "thirty"},
+		{20, "twenty"},
+		{10, "ten"}}) {
+
+		t.Errorf("Descend: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.AscendGreaterOrEqual(30))
+	if !slices.Equal(brRes, []testPair{
+		{30, "thirty"}}) {
+
+		t.Errorf("AscendGreaterOrEqual: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.AscendLessThan(20))
+	if !slices.Equal(brRes, []testPair{
+		{10, "ten"}}) {
+
+		t.Errorf("AscendLessThan: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.DescendRange(30, 10))
+	if !slices.Equal(brRes, []testPair{
+		{30, "thirty"},
+		{20, "twenty"}}) {
+
+		t.Errorf("DescendRange: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.DescendGreaterThan(20))
+	if !slices.Equal(brRes, []testPair{
+		{30, "thirty"}}) {
+
+		t.Errorf("DescendGreaterThan: unexpected data: %v", brRes)
+	}
+
+	brRes = readFromBPIterator(bp.DescendLessOrEqual(20))
+	if !slices.Equal(brRes, []testPair{
+		{20, "twenty"},
+		{10, "ten"}}) {
+
+		t.Errorf("DescendLessOrEqual: unexpected data: %v", brRes)
+	}
+}
+
 func TestRandomizedIter(t *testing.T) {
 	for _, v := range []int64{100, 101, 110, 123, 555, 800} {
 		t.Run(
