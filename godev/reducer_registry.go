@@ -38,22 +38,6 @@ type reducerHandler[EV any] struct {
 		evs iter.Seq2[uint64, *Event[EV]]) any
 }
 
-type ReducerReader[ST any] struct {
-	name             string
-	deserializeState func(data []byte) (*ST, error)
-}
-
-func (rr *ReducerReader[ST]) ReadState(tx *bolt.Tx) (*ST, error) {
-	glob := tx.Bucket(globalReducersBucket)
-	reducerBucket := glob.Bucket([]byte(rr.name))
-	st := reducerBucket.Get(stateKey)
-	if st == nil {
-		return nil, nil
-	} else {
-		return rr.deserializeState(st)
-	}
-}
-
 func wrapReducer[ST any, EV any](
 	name string,
 	reducer Reducer[ST, EV],

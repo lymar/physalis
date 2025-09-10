@@ -98,20 +98,8 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 			return serializeK(*k)
 		},
 		deserializeK,
-		func(data *V) []byte {
-			bin, err := cbor.Marshal(data)
-			if err != nil {
-				panic(err)
-			}
-			return bin
-		},
-		func(rawData []byte) V {
-			var data V
-			if err := cbor.Unmarshal(rawData, &data); err != nil {
-				panic(err)
-			}
-			return data
-		},
+		kvSerizlizeV,
+		kvDeserializeV,
 	)
 
 	rr.kvMaps[kvName] = kvMapData{
@@ -139,6 +127,22 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 	}
 
 	return &bp
+}
+
+func kvSerizlizeV[V any](data *V) []byte {
+	bin, err := cbor.Marshal(data)
+	if err != nil {
+		panic(err)
+	}
+	return bin
+}
+
+func kvDeserializeV[V any](rawData []byte) V {
+	var data V
+	if err := cbor.Unmarshal(rawData, &data); err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func getKTypeSerDe[K KType]() (serializer func(k K) []byte,

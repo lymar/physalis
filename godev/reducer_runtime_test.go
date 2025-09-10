@@ -243,11 +243,17 @@ func TestReducerRuntime(t *testing.T) {
 		if err := db.Update(func(tx *bolt.Tx) error {
 			writeFn := reg.apply(db, mkRuntimeEventSeq(1,
 				&Event[TRuntimeEvent]{
+					Payload: TRuntimeEvent{Name: "dave", Points: -15}},
+				&Event[TRuntimeEvent]{
+					Payload: TRuntimeEvent{Name: "carol", Points: 25}},
+				&Event[TRuntimeEvent]{
 					Payload: TRuntimeEvent{Name: "alice", Points: 10}},
 				&Event[TRuntimeEvent]{
 					Payload: TRuntimeEvent{Name: "bob", Points: 5}},
 				&Event[TRuntimeEvent]{
 					Payload: TRuntimeEvent{Name: "alice", Points: 20}},
+				&Event[TRuntimeEvent]{
+					Payload: TRuntimeEvent{Name: "carol", Points: 15}},
 			))
 
 			err = writeFn(tx)
@@ -268,9 +274,11 @@ func TestReducerRuntime(t *testing.T) {
 			if loadedState == nil {
 				t.Fatalf("no state after first write")
 			}
-			if loadedState.TotalCounter != 35 {
+			if loadedState.TotalCounter != 60 {
 				t.Fatalf("invalid state after first write, expected 35, got %v", loadedState.TotalCounter)
 			}
+
+			checkReadOnlySortedKV(t, tx, reducerReader)
 
 			return nil
 		}); err != nil {
@@ -281,6 +289,117 @@ func TestReducerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func checkReadOnlySortedKV(t *testing.T, tx *bolt.Tx, reducerReader *ReducerReader[TRuntimeReducerState]) {
+	noKv := OpenReadOnlyKV[string, int64](reducerReader, tx, "no_such_map")
+	someVal := noKv.Get("alice")
+	if someVal != nil {
+		t.Fatalf("expected nil for non-existing map, got %v", someVal)
+	}
+
+	kv := OpenReadOnlyKV[string, int64](reducerReader, tx, "by_name_counter")
+
+	noKeyVal := kv.Get("no_such_key")
+	if noKeyVal != nil {
+		t.Fatalf("expected nil for non-existing key, got %v", noKeyVal)
+	}
+
+	alicePoints := kv.Get("alice")
+	if alicePoints == nil || *alicePoints != 30 {
+		t.Fatalf("invalid alice points, expected 30, got %v", alicePoints)
+	}
+
+	ascendRangeRes := readFromBPIterator(kv.AscendRange("bob", "dave"))
+	if !slices.Equal(ascendRangeRes,
+		[]testKVPair{
+			{"bob", 5},
+			{"carol", 40},
+		}) {
+		t.Fatalf("invalid AscendRange result, got %v", ascendRangeRes)
+	}
+
+	ascendRes := readFromBPIterator(kv.Ascend())
+	if !slices.Equal(ascendRes,
+		[]testKVPair{
+			{"alice", 30},
+			{"bob", 5},
+			{"carol", 40},
+			{"dave", -15},
+		}) {
+		t.Fatalf("invalid Ascend result, got %v", ascendRes)
+	}
+
+	descendRes := readFromBPIterator(kv.Descend())
+	if !slices.Equal(descendRes,
+		[]testKVPair{
+			{"dave", -15},
+			{"carol", 40},
+			{"bob", 5},
+			{"alice", 30},
+		}) {
+		t.Fatalf("invalid Descend result, got %v", descendRes)
+	}
+
+	ascendGreaterOrEqualRes := readFromBPIterator(kv.AscendGreaterOrEqual("carol"))
+	if !slices.Equal(ascendGreaterOrEqualRes,
+		[]testKVPair{
+			{"carol", 40},
+			{"dave", -15},
+		}) {
+		t.Fatalf("invalid AscendGreaterOrEqual result, got %v", ascendGreaterOrEqualRes)
+	}
+
+	ascendLessThanRes := readFromBPIterator(kv.AscendLessThan("carol"))
+	if !slices.Equal(ascendLessThanRes,
+		[]testKVPair{
+			{"alice", 30},
+			{"bob", 5},
+		}) {
+		t.Fatalf("invalid AscendLessThan result, got %v", ascendLessThanRes)
+	}
+
+	descendRangeRes := readFromBPIterator(kv.DescendRange("carol", "alice"))
+	if !slices.Equal(descendRangeRes,
+		[]testKVPair{
+			{"carol", 40},
+			{"bob", 5},
+		}) {
+		t.Fatalf("invalid DescendRange result, got %v", descendRangeRes)
+	}
+
+	descendGreaterThanRes := readFromBPIterator(kv.DescendGreaterThan("alice"))
+	if !slices.Equal(descendGreaterThanRes,
+		[]testKVPair{
+			{"dave", -15},
+			{"carol", 40},
+			{"bob", 5},
+		}) {
+		t.Fatalf("invalid DescendGreaterThan result, got %v", descendGreaterThanRes)
+	}
+
+	descendLessOrEqualRes := readFromBPIterator(kv.DescendLessOrEqual("carol"))
+	if !slices.Equal(descendLessOrEqualRes,
+		[]testKVPair{
+			{"carol", 40},
+			{"bob", 5},
+			{"alice", 30},
+		}) {
+		t.Fatalf("invalid DescendLessOrEqual result, got %v", descendLessOrEqualRes)
+	}
+}
+
+type testKVPair struct {
+	key   string
+	value int64
+}
+
+func readFromBPIterator(i iter.Seq2[string, *int64]) []testKVPair {
+	var res []testKVPair
+	for k, v := range i {
+		res = append(res, testKVPair{k, *v})
+	}
+	return res
 }
 
 func mkRuntimeEventSeq(startUid uint64, events ...*Event[TRuntimeEvent]) func() iter.Seq2[uint64, *Event[TRuntimeEvent]] {

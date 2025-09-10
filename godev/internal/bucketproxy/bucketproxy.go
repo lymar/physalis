@@ -75,12 +75,12 @@ func (bp *BucketProxy[K, V]) Put(key K, data *V) {
 
 func emptyIterator(yield func([]byte, []byte) bool) {}
 
-func (bp *BucketProxy[K, V]) bucketAscendRange(greaterOrEqual, lessThan []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketAscendRange(bucket *bolt.Bucket, greaterOrEqual, lessThan []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Seek(greaterOrEqual)
 	return func(yield func([]byte, []byte) bool) {
 		for nextK != nil {
@@ -106,19 +106,20 @@ func (bp *BucketProxy[K, V]) proxyAscendRange(greaterOrEqual, lessThan K) iter.S
 
 func (bp *BucketProxy[K, V]) AscendRange(greaterOrEqual, lessThan K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketAscendRange(
+		BucketAscendRange(
+			bp.bucket,
 			bp.serializeK(&greaterOrEqual),
 			bp.serializeK(&lessThan)),
 		bp.proxyAscendRange(greaterOrEqual, lessThan),
 		false)
 }
 
-func (bp *BucketProxy[K, V]) bucketAscend() iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketAscend(bucket *bolt.Bucket) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.First()
 	return func(yield func([]byte, []byte) bool) {
 		for nextK != nil {
@@ -140,17 +141,17 @@ func (bp *BucketProxy[K, V]) proxyAscend() iter.Seq[*proxyVal[K, V]] {
 
 func (bp *BucketProxy[K, V]) Ascend() iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketAscend(),
+		BucketAscend(bp.bucket),
 		bp.proxyAscend(),
 		false)
 }
 
-func (bp *BucketProxy[K, V]) bucketDescend() iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketDescend(bucket *bolt.Bucket) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Last()
 	return func(yield func([]byte, []byte) bool) {
 		for nextK != nil {
@@ -172,17 +173,17 @@ func (bp *BucketProxy[K, V]) proxyDescend() iter.Seq[*proxyVal[K, V]] {
 
 func (bp *BucketProxy[K, V]) Descend() iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketDescend(),
+		BucketDescend(bp.bucket),
 		bp.proxyDescend(),
 		true)
 }
 
-func (bp *BucketProxy[K, V]) bucketAscendGreaterOrEqual(greaterOrEqual []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketAscendGreaterOrEqual(bucket *bolt.Bucket, greaterOrEqual []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Seek(greaterOrEqual)
 	return func(yield func([]byte, []byte) bool) {
 		for nextK != nil {
@@ -206,18 +207,18 @@ func (bp *BucketProxy[K, V]) proxyAscendGreaterOrEqual(greaterOrEqual K) iter.Se
 
 func (bp *BucketProxy[K, V]) AscendGreaterOrEqual(greaterOrEqual K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketAscendGreaterOrEqual(
+		BucketAscendGreaterOrEqual(bp.bucket,
 			bp.serializeK(&greaterOrEqual)),
 		bp.proxyAscendGreaterOrEqual(greaterOrEqual),
 		false)
 }
 
-func (bp *BucketProxy[K, V]) bucketAscendLessThan(lessThan []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketAscendLessThan(bucket *bolt.Bucket, lessThan []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.First()
 	return func(yield func([]byte, []byte) bool) {
 		for nextK != nil {
@@ -243,18 +244,18 @@ func (bp *BucketProxy[K, V]) proxyAscendLessThan(lessThan K) iter.Seq[*proxyVal[
 
 func (bp *BucketProxy[K, V]) AscendLessThan(lessThan K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketAscendLessThan(
+		BucketAscendLessThan(bp.bucket,
 			bp.serializeK(&lessThan)),
 		bp.proxyAscendLessThan(lessThan),
 		false)
 }
 
-func (bp *BucketProxy[K, V]) bucketDescendRange(lessOrEqual, greaterThan []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketDescendRange(bucket *bolt.Bucket, lessOrEqual, greaterThan []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Seek(lessOrEqual)
 
 	if nextK == nil {
@@ -289,19 +290,19 @@ func (bp *BucketProxy[K, V]) proxyDescendRange(lessOrEqual, greaterThan K) iter.
 
 func (bp *BucketProxy[K, V]) DescendRange(lessOrEqual, greaterThan K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketDescendRange(
+		BucketDescendRange(bp.bucket,
 			bp.serializeK(&lessOrEqual),
 			bp.serializeK(&greaterThan)),
 		bp.proxyDescendRange(lessOrEqual, greaterThan),
 		true)
 }
 
-func (bp *BucketProxy[K, V]) bucketDescendGreaterThan(greaterThan []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketDescendGreaterThan(bucket *bolt.Bucket, greaterThan []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Last()
 
 	return func(yield func([]byte, []byte) bool) {
@@ -328,18 +329,18 @@ func (bp *BucketProxy[K, V]) proxyDescendGreaterThan(greaterThan K) iter.Seq[*pr
 
 func (bp *BucketProxy[K, V]) DescendGreaterThan(greaterThan K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketDescendGreaterThan(
+		BucketDescendGreaterThan(bp.bucket,
 			bp.serializeK(&greaterThan)),
 		bp.proxyDescendGreaterThan(greaterThan),
 		true)
 }
 
-func (bp *BucketProxy[K, V]) bucketDescendLessOrEqual(lessOrEqual []byte) iter.Seq2[[]byte, []byte] {
-	if bp.bucket == nil {
+func BucketDescendLessOrEqual(bucket *bolt.Bucket, lessOrEqual []byte) iter.Seq2[[]byte, []byte] {
+	if bucket == nil {
 		return emptyIterator
 	}
 
-	c := bp.bucket.Cursor()
+	c := bucket.Cursor()
 	nextK, nextV := c.Seek(lessOrEqual)
 
 	if nextK == nil {
@@ -370,7 +371,7 @@ func (bp *BucketProxy[K, V]) proxyDescendLessOrEqual(lessOrEqual K) iter.Seq[*pr
 
 func (bp *BucketProxy[K, V]) DescendLessOrEqual(lessOrEqual K) iter.Seq2[K, *V] {
 	return bp.mergeIters(
-		bp.bucketDescendLessOrEqual(
+		BucketDescendLessOrEqual(bp.bucket,
 			bp.serializeK(&lessOrEqual)),
 		bp.proxyDescendLessOrEqual(lessOrEqual),
 		true)
