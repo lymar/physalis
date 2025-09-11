@@ -291,14 +291,14 @@ func TestReducerRuntime(t *testing.T) {
 	}
 }
 
-func checkReadOnlySortedKV(t *testing.T, tx *bolt.Tx, reducerReader *ReducerReader[TRuntimeReducerState]) {
-	noKv := OpenReadOnlyKV[string, int64](reducerReader, tx, "no_such_map")
+func checkReadOnlySortedKV(t *testing.T, tx *bolt.Tx, reducerReader *GlobReducerReader[TRuntimeReducerState]) {
+	noKv := GlobOpenReadOnlyKV[string, int64](reducerReader, tx, "no_such_map")
 	someVal := noKv.Get("alice")
 	if someVal != nil {
 		t.Fatalf("expected nil for non-existing map, got %v", someVal)
 	}
 
-	kv := OpenReadOnlyKV[string, int64](reducerReader, tx, "by_name_counter")
+	kv := GlobOpenReadOnlyKV[string, int64](reducerReader, tx, "by_name_counter")
 
 	noKeyVal := kv.Get("no_such_key")
 	if noKeyVal != nil {

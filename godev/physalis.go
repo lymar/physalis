@@ -15,7 +15,7 @@ type Physalis[E any] struct {
 }
 
 type Event[E any] struct {
-	Key       string
+	// Key       string
 	Payload   E
 	Timestamp int64
 }

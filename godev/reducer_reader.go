@@ -7,12 +7,16 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-type ReducerReader[ST any] struct {
+type reducerReader[ST any] struct {
 	name             string
 	deserializeState func(data []byte) (*ST, error)
 }
 
-func (rr *ReducerReader[ST]) ReadState(tx *bolt.Tx) (*ST, error) {
+type GlobReducerReader[ST any] struct {
+	reducerReader[ST]
+}
+
+func (rr *GlobReducerReader[ST]) ReadState(tx *bolt.Tx) (*ST, error) {
 	glob := tx.Bucket(globalReducersBucket)
 	reducerBucket := glob.Bucket([]byte(rr.name))
 	st := reducerBucket.Get(stateKey)
@@ -21,6 +25,10 @@ func (rr *ReducerReader[ST]) ReadState(tx *bolt.Tx) (*ST, error) {
 	} else {
 		return rr.deserializeState(st)
 	}
+}
+
+type KeyedReducerReader[ST any] struct {
+	reducerReader[ST]
 }
 
 type ReadOnlySortedKV[K KType, V any] interface {
@@ -121,8 +129,8 @@ func (skv *roSortedKV[K, V]) DescendLessOrEqual(lessOrEqual K) iter.Seq2[K, *V] 
 	))
 }
 
-func OpenReadOnlyKV[K KType, V any, ST any](
-	reader *ReducerReader[ST],
+func GlobOpenReadOnlyKV[K KType, V any, ST any](
+	reader *GlobReducerReader[ST],
 	tx *bolt.Tx,
 	kvName string,
 ) ReadOnlySortedKV[K, V] {

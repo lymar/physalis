@@ -16,6 +16,7 @@ type ReducerRuntime struct {
 	db          *bolt.DB
 	tx          *bolt.Tx
 	reducerName string
+	key         *string
 	kvMaps      map[string]kvMapData
 }
 
@@ -28,11 +29,12 @@ type kvMapData struct {
 	writeToDb func(writeTx *bolt.Tx) error
 }
 
-func newReducerRuntime(db *bolt.DB, reducerName string) *ReducerRuntime {
+func newReducerRuntime(db *bolt.DB, reducerName string, key *string) *ReducerRuntime {
 	return &ReducerRuntime{
 		db,
 		nil,
 		reducerName,
+		key,
 		nil,
 	}
 }
@@ -81,13 +83,24 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 		rr.tx = tx
 	}
 
-	glob := rr.tx.Bucket(globalReducersBucket)
-	reducerBucket := glob.Bucket([]byte(rr.reducerName))
-	kvParent := reducerBucket.Bucket(kvBucket)
-
 	var bucket *bolt.Bucket = nil
-	if kvParent != nil {
-		bucket = kvParent.Bucket([]byte(kvName))
+
+	if rr.key == nil {
+		glob := rr.tx.Bucket(globalReducersBucket)
+		reducerBucket := glob.Bucket([]byte(rr.reducerName))
+		kvParent := reducerBucket.Bucket(kvBucket)
+
+		if kvParent != nil {
+			bucket = kvParent.Bucket([]byte(kvName))
+		}
+	} else {
+		keyed := rr.tx.Bucket(keyedReducersBucket)
+		reducerBucket := keyed.Bucket([]byte(rr.reducerName))
+		keysBucket := reducerBucket.Bucket([]byte(keysBucket))
+
+		if keysBucket != nil {
+			// TODO: !!!!!!!!!!!!!!!!!!!!
+		}
 	}
 
 	serializeK, deserializeK := getKTypeSerDe[K]()

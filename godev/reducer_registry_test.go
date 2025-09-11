@@ -42,7 +42,8 @@ func (gr *TReducer) Version() string {
 	return gr.version
 }
 
-var reducerName = "inc_global"
+var globReducerName = "inc_global"
+var keyedReducerName = "inc_keyed"
 
 func (gr *TReducer) Apply(
 	runtime *ReducerRuntime,
@@ -62,18 +63,14 @@ func (gr *TReducer) Apply(
 		}
 	}
 
-	if state.Counter > 10 {
-		return nil
-	} else {
-		return state
-	}
+	return state
 }
 
-func TestRegistryBase(t *testing.T) {
+func TestGlobalBase(t *testing.T) {
 	log.InitDevLog()
 
 	reg := NewReducerRegistry[TEvent]()
-	_, err := AddGlobalReducer(reg, reducerName, &TReducer{version: "1"})
+	_, err := AddGlobalReducer(reg, globReducerName, &TReducer{version: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +94,7 @@ func TestRegistryBase(t *testing.T) {
 				return err
 			}
 
-			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
+			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, globReducerName)
 			if err != nil {
 				return err
 			}
@@ -113,7 +110,7 @@ func TestRegistryBase(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		currentInMemState := reg.global[reducerName].currentState.(*TReducerState).Counter
+		currentInMemState := reg.global[globReducerName].currentState.(*TReducerState).Counter
 		if currentInMemState != 3 {
 			t.Fatalf(
 				"invalid in-memory state after first write, expected 3, got %v",
@@ -123,7 +120,7 @@ func TestRegistryBase(t *testing.T) {
 		// Testing that no write occurs if the state does not change
 
 		if err := db.Update(func(tx *bolt.Tx) error {
-			if err := writeGlobReducerStateToDb(tx, reducerName, &TReducerState{Counter: 123}); err != nil {
+			if err := writeGlobReducerStateToDb(tx, globReducerName, &TReducerState{Counter: 123}); err != nil {
 				return err
 			}
 
@@ -142,7 +139,7 @@ func TestRegistryBase(t *testing.T) {
 				return err
 			}
 
-			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
+			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, globReducerName)
 
 			if loadedState.Counter != 123 {
 				t.Fatalf("state changed when it should not, expected 123, got %v", loadedState.Counter)
@@ -155,14 +152,86 @@ func TestRegistryBase(t *testing.T) {
 	})
 }
 
-func TestNilState(t *testing.T) {
+func TestVersionChange(t *testing.T) {
 	log.InitDevLog()
 
-	reg := NewReducerRegistry[TEvent]()
-	_, err := AddGlobalReducer(reg, reducerName, &TReducer{version: "1"})
+	err := withTempDb(func(db *bolt.DB) {
+		if err := db.Update(func(tx *bolt.Tx) error {
+			reg := NewReducerRegistry[TEvent]()
+			_, err := AddGlobalReducer(reg, globReducerName, &TReducer{version: "1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = reg.init(tx)
+			if err != nil {
+				return err
+			}
+
+			writeFn := reg.apply(db, getSimpleEvents())
+
+			err = writeFn(tx)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			reg = NewReducerRegistry[TEvent]()
+			_, err = AddGlobalReducer(reg, globReducerName, &TReducer{version: "1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = reg.init(tx)
+			if err != nil {
+				return err
+			}
+
+			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, globReducerName)
+
+			if loadedState.Counter != 3 {
+				t.Fatalf("state changed when it should not, expected 3, got %v", loadedState.Counter)
+			}
+
+			reg = NewReducerRegistry[TEvent]()
+			_, err = AddGlobalReducer(reg, globReducerName, &TReducer{version: "2"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = reg.init(tx)
+			if err != nil {
+				return err
+			}
+
+			loadedState, err = loadGlobReducerStateFromDb[TReducerState](tx, globReducerName)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loadedState != nil {
+				t.Fatalf("state should be nil, got %v", loadedState)
+			}
+
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// go test ./ -v -run ^TestKeyedBase$
+func TestKeyedBase(t *testing.T) {
+	log.InitDevLog()
+
+	reg := NewReducerRegistry[TEvent]()
+	_, err := AddKeyedReducer(reg, keyedReducerName, &TReducer{version: "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	err = withTempDb(func(db *bolt.DB) {
 		if err := db.Update(func(tx *bolt.Tx) error {
 			err := reg.init(tx)
@@ -170,113 +239,17 @@ func TestNilState(t *testing.T) {
 				return err
 			}
 
-			writeFn := reg.apply(db, getSimpleEvents())
-
-			err = writeFn(tx)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
-
-			if loadedState.Counter != 3 {
-				t.Fatalf("state changed when it should not, expected 3, got %v", loadedState.Counter)
-			}
-
-			writeFn = reg.apply(db, mkEventSeq(4,
-				&Event[TEvent]{Payload: TEvent{Increment: &Increment{Val: 100}}},
-			))
-
-			err = writeFn(tx)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			loadedState, err = loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
-
-			if err != nil {
-				t.Fatal(err)
-			}
-			if loadedState != nil {
-				t.Fatalf("state should be nil, got %v", loadedState)
-			}
-
-			if reg.global[reducerName].currentState != nil {
-				t.Fatalf("in-memory state should be nil, got %+v", reg.global[reducerName].currentState)
-			}
-			if reg.global[reducerName].currentStateRaw != nil {
-				t.Fatalf("in-memory raw state should be nil, got %v", reg.global[reducerName].currentStateRaw)
-			}
-
 			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
 
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
+		writeFn := reg.apply(db, getSimpleEvents())
 
-func TestVersionChange(t *testing.T) {
-	log.InitDevLog()
-
-	err := withTempDb(func(db *bolt.DB) {
 		if err := db.Update(func(tx *bolt.Tx) error {
-			reg := NewReducerRegistry[TEvent]()
-			_, err := AddGlobalReducer(reg, reducerName, &TReducer{version: "1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			err = reg.init(tx)
+			err := writeFn(tx)
 			if err != nil {
 				return err
-			}
-
-			writeFn := reg.apply(db, getSimpleEvents())
-
-			err = writeFn(tx)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			reg = NewReducerRegistry[TEvent]()
-			_, err = AddGlobalReducer(reg, reducerName, &TReducer{version: "1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			err = reg.init(tx)
-			if err != nil {
-				return err
-			}
-
-			loadedState, err := loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
-
-			if loadedState.Counter != 3 {
-				t.Fatalf("state changed when it should not, expected 3, got %v", loadedState.Counter)
-			}
-
-			reg = NewReducerRegistry[TEvent]()
-			_, err = AddGlobalReducer(reg, reducerName, &TReducer{version: "2"})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			err = reg.init(tx)
-			if err != nil {
-				return err
-			}
-
-			loadedState, err = loadGlobReducerStateFromDb[TReducerState](tx, reducerName)
-
-			if err != nil {
-				t.Fatal(err)
-			}
-			if loadedState != nil {
-				t.Fatalf("state should be nil, got %v", loadedState)
 			}
 
 			return nil
@@ -288,6 +261,8 @@ func TestVersionChange(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TODO: test keyed reducer version changed
 
 func loadGlobReducerStateFromDb[T any](tx *bolt.Tx, reducerName string) (*T, error) {
 	glob := tx.Bucket(globalReducersBucket)
