@@ -38,9 +38,8 @@ type Reducer[ST any, EV any] interface {
 }
 
 type Transaction[EV any] struct {
-	Events []*Event[EV]
-
-	// TODO: тут еще добавление и удаление в blob storage
+	Events      []*Event[EV]
+	BlobStorage map[string][]byte // nil - для удаления
 }
 
 type transactionEnvelope[EV any] struct {
@@ -208,6 +207,10 @@ func (phs *Physalis[EV]) procTransactions(
 	}()
 
 	if err := phs.db.Update(func(tx *bolt.Tx) error {
+		if err := blobStorApply(tx, txs); err != nil {
+			return err
+		}
+
 		if err := eventLog.append(tx, mkRawEvSeq(txs, eventLog.latestID)); err != nil {
 			return err
 		}

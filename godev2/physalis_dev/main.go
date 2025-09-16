@@ -31,6 +31,11 @@ func main() {
 			{Payload: TEvent{Loss: &Loss{Player: "Bob", Points: 5}}},
 			{Payload: TEvent{Loss: &Loss{Player: "Alice", Points: 4}}},
 		},
+		BlobStorage: map[string][]byte{
+			"blob1": []byte("some blob data 1"),
+			"blob2": []byte("some blob data 2"),
+			"blob3": nil,
+		},
 	})
 
 	if err != nil {
@@ -59,6 +64,11 @@ func main() {
 		for k, v := range aliceUnluckyMinutes.Ascend() {
 			slog.Debug("Alice unlucky minute", "minute", k, "points", *v)
 		}
+
+		blob1 := physalis.BlobView(tx, "blob1")
+		slog.Debug("blob1", "data", string(blob1))
+		blob2 := physalis.BlobView(tx, "blob2")
+		slog.Debug("blob2", "data", string(blob2))
 
 		return nil
 	})
