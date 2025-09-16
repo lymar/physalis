@@ -5,6 +5,8 @@ import (
 	"iter"
 	"log/slog"
 
+	"github.com/fxamacker/cbor/v2"
+	"github.com/go-softwarelab/common/pkg/types"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -46,6 +48,8 @@ func (evl *eventLogHandler[EV]) append(
 	evs := tx.Bucket(evsBucket)
 
 	for id, evData := range events {
+		// slog.Debug("*********", id)
+
 		if id != evl.latestID+1 {
 			panic("event IDs must be sequential")
 		}
@@ -59,4 +63,51 @@ func (evl *eventLogHandler[EV]) append(
 	}
 
 	return nil
+}
+
+func loadEventsFromPos[EV any](
+	db *bolt.DB,
+	fromID uint64,
+	maxCount int,
+) <-chan types.Pair[uint64, *Event[EV]] {
+	out := make(chan types.Pair[uint64, *Event[EV]], 1024)
+	go func() {
+		defer close(out)
+
+		err := db.View(func(tx *bolt.Tx) error {
+			evs := tx.Bucket(evsBucket)
+			if evs == nil {
+				return nil
+			}
+
+			c := evs.Cursor()
+
+			startKey := make([]byte, 8)
+			binary.BigEndian.PutUint64(startKey, fromID)
+
+			readed := 0
+			for k, v := c.Seek(startKey); k != nil; k, v = c.Next() {
+				id := binary.BigEndian.Uint64(k)
+				var ev *Event[EV]
+				err := cbor.Unmarshal(v, &ev)
+				if err != nil {
+					slog.Error("failed to deserialize event", "error", err, "eventId", id)
+					break
+				}
+				out <- types.Pair[uint64, *Event[EV]]{Left: id, Right: ev}
+				readed++
+				if readed >= maxCount {
+					break
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			slog.Error("failed to load events from log", "error", err)
+			panic(err)
+		}
+	}()
+
+	return out
 }

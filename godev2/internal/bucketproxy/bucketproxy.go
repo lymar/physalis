@@ -3,9 +3,9 @@ package bucketproxy
 import (
 	"cmp"
 	"iter"
-	"log/slog"
 	"slices"
 
+	"github.com/go-softwarelab/common/pkg/types"
 	"github.com/google/btree"
 	bolt "go.etcd.io/bbolt"
 )
@@ -450,22 +450,32 @@ func compare[T cmp.Ordered](a, b T) int {
 	}
 }
 
-func (bp *BucketProxy[K, V]) WriteProxyToDb(bucket *bolt.Bucket) error {
+func (bp *BucketProxy[K, V]) WriteProxyToDb() func(bucket *bolt.Bucket) error {
+	var toInsert []*types.Pair[[]byte, []byte]
+	var toDelete [][]byte
+
 	for e := range bp.proxyAscend() {
 		if e.exists {
-			slog.Debug("BucketProxy: writing to db", "key", e.key)
-			err := bucket.Put(bp.serializeK(&e.key), bp.serializeV(e.data))
-			if err != nil {
-				return err
-			}
+			toInsert = append(toInsert, types.NewPair(bp.serializeK(&e.key), bp.serializeV(e.data)))
 		} else {
-			slog.Debug("BucketProxy: deleting from db", "key", e.key)
-			err := bucket.Delete(bp.serializeK(&e.key))
+			toDelete = append(toDelete, bp.serializeK(&e.key))
+		}
+	}
+
+	return func(bucket *bolt.Bucket) error {
+		for _, dk := range toDelete {
+			err := bucket.Delete(dk)
 			if err != nil {
 				return err
 			}
 		}
-	}
+		for _, ti := range toInsert {
+			err := bucket.Put(ti.Left, ti.Right)
+			if err != nil {
+				return err
+			}
+		}
 
-	return nil
+		return nil
+	}
 }

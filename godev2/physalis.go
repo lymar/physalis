@@ -35,8 +35,6 @@ type Reducer[ST any, EV any] interface {
 		evs iter.Seq2[uint64, *Event[EV]]) *ST
 }
 
-type ReducerRuntime struct{}
-
 type Transaction[EV any] struct {
 	Events []*Event[EV]
 
@@ -75,8 +73,12 @@ func (phs *Physalis[EV]) Close() error {
 }
 
 func (phs *Physalis[EV]) Write(transaction Transaction[EV]) error {
-	rawEvents := make([][]byte, len(transaction.Events))
+	rawEvents := make([][]byte, 0, len(transaction.Events))
 	for _, ev := range transaction.Events {
+		if ev.Timestamp == 0 {
+			ev.Timestamp = time.Now().UnixMicro()
+		}
+
 		raw, err := cbor.Marshal(ev)
 		if err != nil {
 			return err
@@ -105,7 +107,7 @@ func (phs *Physalis[EV]) mainLoop() {
 	for _, rh := range phs.registry.reducers {
 		rh.cmdChan = make(chan reduceCmd[EV], 1)
 		reducersInit.Add(1)
-		go rh.mainLoop(phs.db, &reducersInit)
+		go rh.mainLoop(phs.db, &reducersInit, eventLog.latestID)
 	}
 	reducersInit.Wait()
 

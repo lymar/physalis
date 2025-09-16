@@ -13,7 +13,7 @@ func main() {
 
 	reg := physalis.NewReducerRegistry[TEvent]()
 
-	physalis.AddReducer(reg, "points", &TReducer{version: "v1"})
+	physalis.AddReducer(reg, "points", &TReducer{version: "v10"})
 
 	phs, err := physalis.Open[TEvent]("dev.db", reg)
 	if err != nil {
@@ -21,17 +21,17 @@ func main() {
 	}
 	defer phs.Close()
 
-	err = phs.Write(physalis.Transaction[TEvent]{
-		Events: []*physalis.Event[TEvent]{
-			{Payload: TEvent{Win: &Win{Player: "Alice", Points: 10}}},
-			{Payload: TEvent{Loss: &Loss{Player: "Bob", Points: 5}}},
-			{Payload: TEvent{Loss: &Loss{Player: "Alice", Points: 4}}},
-		},
-	})
+	// err = phs.Write(physalis.Transaction[TEvent]{
+	// 	Events: []*physalis.Event[TEvent]{
+	// 		{Payload: TEvent{Win: &Win{Player: "Alice", Points: 10}}},
+	// 		{Payload: TEvent{Loss: &Loss{Player: "Bob", Points: 5}}},
+	// 		{Payload: TEvent{Loss: &Loss{Player: "Alice", Points: 4}}},
+	// 	},
+	// })
 
-	if err != nil {
-		panic(err)
-	}
+	// if err != nil {
+	// 	panic(err)
+	// }
 }
 
 type Win struct {

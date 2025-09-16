@@ -13,7 +13,7 @@ import (
 
 var reducersBucket = []byte("reducers")
 var statesBucket = []byte("states")
-var kvBucket = []byte("kv")
+var kvsBucket = []byte("kvs")
 var versionKey = []byte("version")
 var logPosKey = []byte("log_pos")
 
@@ -24,7 +24,7 @@ var logPosKey = []byte("log_pos")
 // 			- bucket: statesBucket - "states"
 // 				- <event group key> -> <serialized state>
 // 				...
-// 			- bucket: kvBucket - "kv"
+// 			- bucket: kvsBucket - "kvs"
 // 				- bucket: <event group key>
 // 					- bucket: <map name>
 // 						- <serialized key> -> <serialized value>
@@ -34,6 +34,7 @@ var logPosKey = []byte("log_pos")
 type reducerHandler[EV any] struct {
 	name             string
 	version          string
+	logPos           uint64
 	serializeState   func(state any) ([]byte, error)
 	deserializeState func(data []byte) (any, error)
 	prepare          func(*Event[EV]) (string, *Event[EV])
@@ -62,13 +63,17 @@ type reduceCmd[EV any] struct {
 	writeResult    chan<- func(tx *bolt.Tx) error
 }
 
-func (rh *reducerHandler[EV]) mainLoop(db *bolt.DB, init *sync.WaitGroup) {
-	if err := rh.init(db); err != nil {
-		slog.Error("failed to init reducer handler", "reducer", rh.name, "error", err)
+func (rh *reducerHandler[EV]) mainLoop(db *bolt.DB, init *sync.WaitGroup,
+	latestLogPos uint64) {
+	if err := rh.initBucket(db); err != nil {
+		slog.Error("failed to init reducer bucket", "reducer", rh.name, "error", err)
 		panic(err)
 	}
 
-	// TODO: load events from log
+	if err := rh.initState(db, latestLogPos); err != nil {
+		slog.Error("failed to init reducer state", "reducer", rh.name, "error", err)
+		panic(err)
+	}
 
 	init.Done()
 
@@ -105,6 +110,7 @@ func (rh *reducerHandler[EV]) doReduce(db *bolt.DB, cmd reduceCmd[EV]) {
 	bname := []byte(rh.name)
 
 	if latestEventId != 0 {
+		rh.logPos = latestEventId
 		cmd.writeResult <- func(tx *bolt.Tx) error {
 			reducers := tx.Bucket(reducersBucket)
 			bucket := reducers.Bucket(bname)
@@ -144,9 +150,12 @@ func (rh *reducerHandler[EV]) doReduceKey(
 			}
 		}
 
-		// TODO: создать runtime и писать его если нужно
+		runtime := newReducerRuntime(db, rh.name, groupKey)
+		defer func() {
+			err = runtime.close()
+		}()
 
-		newState := rh.apply(nil, prevState, groupKey, evPairsSeq2(evs))
+		newState := rh.apply(runtime, prevState, groupKey, evPairsSeq2(evs))
 		newStateRaw, err := rh.serializeState(newState)
 		if err != nil {
 			return err
@@ -159,6 +168,10 @@ func (rh *reducerHandler[EV]) doReduceKey(
 				states := bucket.Bucket(statesBucket)
 				return states.Put(bGroupKey, newStateRaw)
 			}
+		}
+
+		for _, kvInst := range runtime.kvMaps {
+			parentCmd.writeResult <- kvInst.writeToDb()
 		}
 
 		return nil
@@ -178,7 +191,17 @@ func evPairsSeq2[EV any](pairs []types.Pair[uint64, *Event[EV]]) iter.Seq2[uint6
 	}
 }
 
-func (rh *reducerHandler[EV]) init(db *bolt.DB) error {
+func evChanSeq2[EV any](pairsChan <-chan types.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
+	return func(yield func(uint64, *Event[EV]) bool) {
+		for p := range pairsChan {
+			if !yield(p.Left, p.Right) {
+				break
+			}
+		}
+	}
+}
+
+func (rh *reducerHandler[EV]) initBucket(db *bolt.DB) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		reducers, err := tx.CreateBucketIfNotExists(reducersBucket)
 		if err != nil {
@@ -201,6 +224,15 @@ func (rh *reducerHandler[EV]) init(db *bolt.DB) error {
 				reducers.DeleteBucket(bname)
 				newBucket = true
 			} else {
+				pLogPos, err := readSystemValue[uint64](reducerBucket, logPosKey)
+				if err != nil {
+					return err
+				}
+				rh.logPos = *pLogPos
+
+				slog.Debug("loaded reducer state", "name", rh.name,
+					"version", rh.version, "log_pos", rh.logPos)
+
 				newBucket = false
 			}
 		} else {
@@ -215,8 +247,8 @@ func (rh *reducerHandler[EV]) init(db *bolt.DB) error {
 			if err := writeSystemValue(reducerBucket, versionKey, &rh.version); err != nil {
 				return err
 			}
-			logPos := uint64(0)
-			if err := writeSystemValue(reducerBucket, logPosKey, &logPos); err != nil {
+			rh.logPos = 0
+			if err := writeSystemValue(reducerBucket, logPosKey, &rh.logPos); err != nil {
 				return err
 			}
 			_, err = reducerBucket.CreateBucket(statesBucket)
@@ -228,6 +260,53 @@ func (rh *reducerHandler[EV]) init(db *bolt.DB) error {
 
 		return nil
 	})
+}
+
+func (rh *reducerHandler[EV]) initState(db *bolt.DB, latestLogPos uint64) error {
+	for {
+		if rh.logPos == latestLogPos {
+			return nil
+		}
+
+		slog.Debug("init reducer state: loading events",
+			"reducer", rh.name, "from", rh.logPos+1)
+
+		evChan := loadEventsFromPos[EV](db, rh.logPos+1, 64000)
+
+		resultChan := make(chan func(tx *bolt.Tx) error, 100)
+		var activeReducers sync.WaitGroup
+
+		activeReducers.Add(1)
+		go rh.doReduce(db, reduceCmd[EV]{
+			activeReducers: &activeReducers,
+			readEvents: func() iter.Seq2[uint64, *Event[EV]] {
+				return evChanSeq2(evChan)
+			},
+			writeResult: resultChan,
+		})
+
+		go func() {
+			activeReducers.Wait()
+			close(resultChan)
+		}()
+
+		var writers []func(tx *bolt.Tx) error
+		for writeFn := range resultChan {
+			writers = append(writers, writeFn)
+		}
+
+		if err := db.Batch(func(tx *bolt.Tx) error {
+			for _, writeFn := range writers {
+				if err := writeFn(tx); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
 }
 
 func serializeReducerState[ST any](state any) ([]byte, error) {
