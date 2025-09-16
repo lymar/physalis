@@ -114,7 +114,7 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 			writeProxyToDBFunc := bp.WriteProxyToDb()
 
 			return func(writeTx *bolt.Tx) error {
-				reducers := rr.tx.Bucket(reducersBucket)
+				reducers := writeTx.Bucket(reducersBucket)
 				reducerBuck := reducers.Bucket([]byte(rr.reducerName))
 				kvsBuck, err := reducerBuck.CreateBucketIfNotExists(kvsBucket)
 				if err != nil {

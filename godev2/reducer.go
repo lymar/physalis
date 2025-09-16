@@ -14,12 +14,12 @@ import (
 var reducersBucket = []byte("reducers")
 var statesBucket = []byte("states")
 var kvsBucket = []byte("kvs")
-var versionKey = []byte("version")
 var logPosKey = []byte("log_pos")
+var versionPrefix = "version:"
 
 // - bucket: reducersBucket - "reducers"
+// 		- version:<reducer name> -> <version>
 // 		- bucket: <reducer name>
-// 			- versionKey -> <version>
 // 			- logPosKey -> <last processed log position>
 // 			- bucket: statesBucket - "states"
 // 				- <event group key> -> <serialized state>
@@ -213,8 +213,10 @@ func (rh *reducerHandler[EV]) initBucket(db *bolt.DB) error {
 		bname := []byte(rh.name)
 		reducerBucket := reducers.Bucket(bname)
 
+		versionKey := []byte(versionPrefix + rh.name)
+
 		if reducerBucket != nil {
-			ver, err := readSystemValue[string](reducerBucket, versionKey)
+			ver, err := readSystemValue[string](reducers, versionKey)
 			if err != nil {
 				return err
 			}
@@ -244,7 +246,7 @@ func (rh *reducerHandler[EV]) initBucket(db *bolt.DB) error {
 			if err != nil {
 				return err
 			}
-			if err := writeSystemValue(reducerBucket, versionKey, &rh.version); err != nil {
+			if err := writeSystemValue(reducers, versionKey, &rh.version); err != nil {
 				return err
 			}
 			rh.logPos = 0

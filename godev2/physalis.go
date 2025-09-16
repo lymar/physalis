@@ -3,6 +3,7 @@ package physalis
 import (
 	"iter"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ type Physalis[EV any] struct {
 	registry       *ReducerRegistry[EV]
 	transactions   chan *transactionEnvelope[EV]
 	mainLoopClosed chan struct{}
+	initDone       sync.WaitGroup
 }
 
 type Event[EV any] struct {
@@ -59,17 +61,23 @@ func Open[EV any](dbFile string, registry *ReducerRegistry[EV]) (*Physalis[EV], 
 		transactions:   make(chan *transactionEnvelope[EV], 1024),
 		mainLoopClosed: make(chan struct{}),
 	}
+	phs.initDone.Add(1)
 	go phs.mainLoop()
 
 	return phs, nil
 }
 
-// TODO: удалять данные редьюссеров, если их нет в новом reducer_registry
-
 func (phs *Physalis[EV]) Close() error {
 	close(phs.transactions)
 	<-phs.mainLoopClosed
 	return phs.db.Close()
+}
+
+func (ev *Event[EV]) ReadTimestamp() time.Time {
+	if ev.Timestamp == 0 {
+		return time.Time{}
+	}
+	return time.UnixMicro(ev.Timestamp)
 }
 
 func (phs *Physalis[EV]) Write(transaction Transaction[EV]) error {
@@ -95,11 +103,22 @@ func (phs *Physalis[EV]) Write(transaction Transaction[EV]) error {
 	return <-done
 }
 
+func (phs *Physalis[EV]) View(vf func(tx *bolt.Tx) error) error {
+	phs.initDone.Wait()
+	return phs.db.View(vf)
+}
+
 func (phs *Physalis[EV]) mainLoop() {
 	defer close(phs.mainLoopClosed)
 
 	eventLog := eventLogHandler[EV]{}
 	if err := eventLog.init(phs.db); err != nil {
+		slog.Error("failed to init event log", "error", err)
+		panic(err)
+	}
+
+	if err := phs.cleanReducers(); err != nil {
+		slog.Error("failed to clean reducers", "error", err)
 		panic(err)
 	}
 
@@ -110,6 +129,8 @@ func (phs *Physalis[EV]) mainLoop() {
 		go rh.mainLoop(phs.db, &reducersInit, eventLog.latestID)
 	}
 	reducersInit.Wait()
+
+	phs.initDone.Done()
 
 	for {
 		t, ok := <-phs.transactions
@@ -132,6 +153,35 @@ func (phs *Physalis[EV]) mainLoop() {
 
 		phs.procTransactions(txs, &eventLog)
 	}
+}
+
+func (phs *Physalis[EV]) cleanReducers() error {
+	return phs.db.Update(func(tx *bolt.Tx) error {
+		reducers := tx.Bucket(reducersBucket)
+		if reducers == nil {
+			return nil
+		}
+
+		cleanList := make([]string, 0)
+
+		c := reducers.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			name := string(k)
+			if reducer, ok := strings.CutPrefix(name, versionPrefix); ok {
+				if _, found := phs.registry.reducers[reducer]; !found {
+					cleanList = append(cleanList, reducer)
+				}
+			}
+		}
+
+		for _, name := range cleanList {
+			slog.Info("cleaning up reducer", "reducer", name)
+			reducers.Delete([]byte(versionPrefix + name))
+			reducers.DeleteBucket([]byte(name))
+		}
+
+		return nil
+	})
 }
 
 func (phs *Physalis[EV]) procTransactions(

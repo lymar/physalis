@@ -12,15 +12,13 @@ func NewReducerRegistry[EV any]() *ReducerRegistry[EV] {
 	}
 }
 
-type GlobReducerReader[ST any] struct{}
-
 var ErrReducerAlreadyExists = errors.New("reducer already exists")
 
 func AddReducer[ST any, EV any](
 	reg *ReducerRegistry[EV],
 	name string,
 	reducer Reducer[ST, EV],
-) (*GlobReducerReader[ST], error) {
+) (*ReducerReader[ST], error) {
 	if _, exists := reg.reducers[name]; exists {
 		return nil, ErrReducerAlreadyExists
 	}
@@ -29,5 +27,8 @@ func AddReducer[ST any, EV any](
 
 	reg.reducers[name] = h
 
-	return &GlobReducerReader[ST]{}, nil
+	return &ReducerReader[ST]{
+		name,
+		deserializeReducerState[ST, *ST],
+	}, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lymar/physalis"
 	"github.com/lymar/physalis/internal/log"
+	bolt "go.etcd.io/bbolt"
 )
 
 func main() {
@@ -13,7 +14,10 @@ func main() {
 
 	reg := physalis.NewReducerRegistry[TEvent]()
 
-	physalis.AddReducer(reg, "points", &TReducer{version: "v10"})
+	reader, err := physalis.AddReducer(reg, "points4", &TReducer{version: "v1"})
+	if err != nil {
+		panic(err)
+	}
 
 	phs, err := physalis.Open[TEvent]("dev.db", reg)
 	if err != nil {
@@ -21,17 +25,43 @@ func main() {
 	}
 	defer phs.Close()
 
-	// err = phs.Write(physalis.Transaction[TEvent]{
-	// 	Events: []*physalis.Event[TEvent]{
-	// 		{Payload: TEvent{Win: &Win{Player: "Alice", Points: 10}}},
-	// 		{Payload: TEvent{Loss: &Loss{Player: "Bob", Points: 5}}},
-	// 		{Payload: TEvent{Loss: &Loss{Player: "Alice", Points: 4}}},
-	// 	},
-	// })
+	err = phs.Write(physalis.Transaction[TEvent]{
+		Events: []*physalis.Event[TEvent]{
+			{Payload: TEvent{Win: &Win{Player: "Alice", Points: 10}}},
+			{Payload: TEvent{Loss: &Loss{Player: "Bob", Points: 5}}},
+			{Payload: TEvent{Loss: &Loss{Player: "Alice", Points: 4}}},
+		},
+	})
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		panic(err)
+	}
+
+	phs.View(func(tx *bolt.Tx) error {
+		alice, err := reader.ReadState(tx, "Alice")
+		if err != nil {
+			return err
+		}
+		slog.Debug("Alice", "points", alice.Points)
+
+		bob, err := reader.ReadState(tx, "Bob")
+		if err != nil {
+			return err
+		}
+		slog.Debug("Bob", "points", bob.Points)
+
+		aliceLuckyMinutes := physalis.OpenKVView[uint32, int](reader, tx, "Alice", "lucky_minutes")
+		for k, v := range aliceLuckyMinutes.Ascend() {
+			slog.Debug("Alice lucky minute", "minute", k, "points", *v)
+		}
+
+		aliceUnluckyMinutes := physalis.OpenKVView[uint32, int](reader, tx, "Alice", "unlucky_minutes")
+		for k, v := range aliceUnluckyMinutes.Ascend() {
+			slog.Debug("Alice unlucky minute", "minute", k, "points", *v)
+		}
+
+		return nil
+	})
 }
 
 type Win struct {
@@ -78,16 +108,37 @@ func (rd *TReducer) Apply(
 	groupKey string,
 	evs iter.Seq2[uint64, *physalis.Event[TEvent]]) *TReducerState {
 
+	luckyMinutes := physalis.OpenKV[uint32, int](runtime, "lucky_minutes")
+	unluckyMinutes := physalis.OpenKV[uint32, int](runtime, "unlucky_minutes")
+
 	if state == nil {
 		state = &TReducerState{}
 	}
 	for eid, ev := range evs {
+		minute := uint32(ev.ReadTimestamp().Minute())
 		if ev.Payload.Win != nil {
 			slog.Debug("TReducer: apply", "eventId", eid, "win", ev.Payload.Win.Player, "points", ev.Payload.Win.Points, "name", groupKey)
 			state.Points += ev.Payload.Win.Points
+
+			prevVal := luckyMinutes.Get(minute)
+			if prevVal == nil {
+				luckyMinutes.Put(minute, &ev.Payload.Win.Points)
+			} else {
+				newVal := *prevVal + ev.Payload.Win.Points
+				luckyMinutes.Put(minute, &newVal)
+			}
 		} else if ev.Payload.Loss != nil {
 			slog.Debug("TReducer: apply", "eventId", eid, "loss", ev.Payload.Loss.Player, "points", ev.Payload.Loss.Points, "name", groupKey)
 			state.Points -= ev.Payload.Loss.Points
+
+			prevVal := unluckyMinutes.Get(minute)
+			if prevVal == nil {
+				mp := -ev.Payload.Loss.Points
+				unluckyMinutes.Put(minute, &mp)
+			} else {
+				newVal := *prevVal - ev.Payload.Loss.Points
+				unluckyMinutes.Put(minute, &newVal)
+			}
 		}
 	}
 
