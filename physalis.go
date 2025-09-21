@@ -234,9 +234,10 @@ func (phs *Physalis[EV]) procTransactions(
 
 func wrapEvents[EV any](
 	txs []*transactionEnvelope[EV],
-	latestID uint64,
+	currentLatestID uint64,
 ) func() iter.Seq2[uint64, *Event[EV]] {
 	return func() iter.Seq2[uint64, *Event[EV]] {
+		latestID := currentLatestID
 		return func(yield func(uint64, *Event[EV]) bool) {
 			for _, tx := range txs {
 				for _, ev := range tx.tx.Events {

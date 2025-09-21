@@ -3,7 +3,6 @@ package physalis
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"io/fs"
 )
@@ -18,7 +17,6 @@ import (
 // On any traversal or read error, the function panics.
 func VersionFromFS(fsys fs.FS) string {
 	h := sha256.New()
-	_ = h
 
 	err := fs.WalkDir(fsys, ".", func(path string,
 		d fs.DirEntry, err error) error {
@@ -28,8 +26,6 @@ func VersionFromFS(fsys fs.FS) string {
 
 		h.Write([]byte(path))
 		h.Write([]byte{0})
-
-		fmt.Println(path)
 
 		if d.IsDir() {
 			return nil
