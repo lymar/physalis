@@ -5,8 +5,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// const systemDivider = '╱'
-
 func readSystemValue[V any](bucket *bolt.Bucket, key []byte) (*V, error) {
 	rawData := bucket.Get(key)
 	if rawData == nil {

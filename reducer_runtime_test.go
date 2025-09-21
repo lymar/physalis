@@ -1,6 +1,5 @@
 package physalis
 
-/*
 import (
 	"bytes"
 	"iter"
@@ -9,10 +8,6 @@ import (
 	"slices"
 	"sort"
 	"testing"
-
-	"github.com/go-softwarelab/common/pkg/seq2"
-	"github.com/lymar/physalis/internal/log"
-	bolt "go.etcd.io/bbolt"
 )
 
 // go test ./ -v
@@ -219,6 +214,8 @@ func (gr *TRuntimeReducer) Apply(
 
 	return state
 }
+
+/*
 
 func TestReducerRuntime(t *testing.T) {
 	log.InitDevLog()
