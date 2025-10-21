@@ -8,6 +8,7 @@ require (
 	github.com/google/btree v1.1.3
 	github.com/lmittmann/tint v1.1.2
 	go.etcd.io/bbolt v1.4.3
+	github.com/DataDog/zstd v1.5.7
 )
 
 require (

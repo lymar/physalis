@@ -1,23 +1,29 @@
 package main
 
 import (
+	"context"
 	"iter"
 	"log/slog"
+	"os"
 
 	"github.com/lymar/physalis"
 	"github.com/lymar/physalis/internal/log"
 	bolt "go.etcd.io/bbolt"
 )
 
-func main() {
-	log.InitDevLog()
-
+func initRegistry() (*physalis.ReducerRegistry[TEvent], *physalis.ReducerReader[TReducerState]) {
 	reg := physalis.NewReducerRegistry[TEvent]()
 
 	reader, err := physalis.AddReducer(reg, "points4", &TReducer{version: "v1"})
 	if err != nil {
 		panic(err)
 	}
+
+	return reg, reader
+}
+
+func writeAndRead() {
+	reg, reader := initRegistry()
 
 	phs, err := physalis.Open[TEvent]("dev.db", reg)
 	if err != nil {
@@ -72,6 +78,67 @@ func main() {
 
 		return nil
 	})
+
+	f, err := os.Create("dev.backup")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if err := phs.BackupTo(context.Background(), 5, f); err != nil {
+		panic(err)
+	}
+}
+
+func loadBackupAndRead() {
+	dbName := "dev2.db"
+	if err := os.Remove(dbName); err != nil {
+		if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+
+	backup, err := os.Open("dev.backup")
+	if err != nil {
+		panic(err)
+	}
+	defer backup.Close()
+
+	err = physalis.RestoreDatabase(context.Background(), dbName, backup)
+	if err != nil {
+		panic(err)
+	}
+	backup.Close()
+
+	reg, reader := initRegistry()
+
+	phs, err := physalis.Open[TEvent](dbName, reg)
+	if err != nil {
+		panic(err)
+	}
+	defer phs.Close()
+
+	phs.View(func(tx *bolt.Tx) error {
+		alice, err := reader.ReadState(tx, "Alice")
+		if err != nil {
+			return err
+		}
+		slog.Debug("Alice", "points", alice.Points)
+
+		blob1 := physalis.BlobView(tx, "blob1")
+		slog.Debug("blob1", "data", string(blob1))
+		blob2 := physalis.BlobView(tx, "blob2")
+		slog.Debug("blob2", "data", string(blob2))
+
+		return nil
+	})
+}
+
+func main() {
+	log.InitDevLog()
+
+	writeAndRead()
+	loadBackupAndRead()
 }
 
 type Win struct {
