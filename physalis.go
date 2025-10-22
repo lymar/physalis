@@ -20,8 +20,8 @@ type Physalis[EV any] struct {
 }
 
 type Event[EV any] struct {
-	Payload   EV
-	Timestamp int64
+	Payload   EV    `cbor:"1,keyasint"`
+	Timestamp int64 `cbor:"2,keyasint"`
 }
 
 const SkipEvent = ""
