@@ -49,13 +49,13 @@ func writeAndRead() {
 	}
 
 	phs.View(func(tx *bolt.Tx) error {
-		alice, err := reader.ReadState(tx, "Alice")
+		alice, err := reader.State(tx, "Alice")
 		if err != nil {
 			return err
 		}
 		slog.Debug("Alice", "points", alice.Points)
 
-		bob, err := reader.ReadState(tx, "Bob")
+		bob, err := reader.State(tx, "Bob")
 		if err != nil {
 			return err
 		}
@@ -119,7 +119,7 @@ func loadBackupAndRead() {
 	defer phs.Close()
 
 	phs.View(func(tx *bolt.Tx) error {
-		alice, err := reader.ReadState(tx, "Alice")
+		alice, err := reader.State(tx, "Alice")
 		if err != nil {
 			return err
 		}
@@ -129,6 +129,11 @@ func loadBackupAndRead() {
 		slog.Debug("blob1", "data", string(blob1))
 		blob2 := physalis.BlobView(tx, "blob2")
 		slog.Debug("blob2", "data", string(blob2))
+
+		allStates := reader.AllStates(tx)
+		for k, v := range allStates.Descend() {
+			slog.Debug("all states", "name", k, "points", v.Points)
+		}
 
 		return nil
 	})

@@ -18,7 +18,7 @@ var logPosKey = []byte("log_pos")
 var versionPrefix = "version:"
 
 // - bucket: reducersBucket - "reducers"
-// 		- version:<reducer name> -> <version>
+// 		- version: <reducer name> -> <version>
 // 		- bucket: <reducer name>
 // 			- logPosKey -> <last processed log position>
 // 			- bucket: statesBucket - "states"
