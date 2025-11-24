@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -86,7 +85,7 @@ func (phs *Physalis[EV]) Write(transaction Transaction[EV]) error {
 			ev.Timestamp = time.Now().UnixMicro()
 		}
 
-		raw, err := cbor.Marshal(ev)
+		raw, err := CBORMarshal(ev)
 		if err != nil {
 			return err
 		}

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/go-softwarelab/common/pkg/types"
 	bolt "go.etcd.io/bbolt"
 )
@@ -312,12 +311,12 @@ func (rh *reducerHandler[EV]) initState(db *bolt.DB, latestLogPos uint64) error 
 }
 
 func serializeReducerState[ST any](state any) ([]byte, error) {
-	return cbor.Marshal(state.(*ST))
+	return CBORMarshal(state.(*ST))
 }
 
 func deserializeReducerState[ST any, R any](data []byte) (R, error) {
 	var state *ST
-	if err := cbor.Unmarshal(data, &state); err != nil {
+	if err := CBORUnmarshal(data, &state); err != nil {
 		var zero R
 		return zero, err
 	}

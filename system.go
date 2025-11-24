@@ -1,7 +1,6 @@
 package physalis
 
 import (
-	"github.com/fxamacker/cbor/v2"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -11,14 +10,14 @@ func readSystemValue[V any](bucket *bolt.Bucket, key []byte) (*V, error) {
 		return nil, nil
 	}
 	var data *V
-	if err := cbor.Unmarshal(rawData, &data); err != nil {
+	if err := CBORUnmarshal(rawData, &data); err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
 func writeSystemValue[V any](bucket *bolt.Bucket, key []byte, value *V) error {
-	bin, err := cbor.Marshal(value)
+	bin, err := CBORMarshal(value)
 	if err != nil {
 		return err
 	}

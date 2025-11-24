@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/lymar/physalis/internal/bucketproxy"
 	bolt "go.etcd.io/bbolt"
 )
@@ -144,7 +143,7 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 }
 
 func kvSerizlizeV[V any](data *V) []byte {
-	bin, err := cbor.Marshal(data)
+	bin, err := CBORMarshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -153,7 +152,7 @@ func kvSerizlizeV[V any](data *V) []byte {
 
 func kvDeserializeV[V any](rawData []byte) V {
 	var data V
-	if err := cbor.Unmarshal(rawData, &data); err != nil {
+	if err := CBORUnmarshal(rawData, &data); err != nil {
 		panic(err)
 	}
 	return data

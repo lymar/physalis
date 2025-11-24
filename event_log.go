@@ -5,7 +5,6 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/go-softwarelab/common/pkg/types"
 	bolt "go.etcd.io/bbolt"
 )
@@ -89,7 +88,7 @@ func loadEventsFromPos[EV any](
 			for k, v := c.Seek(startKey); k != nil; k, v = c.Next() {
 				id := binary.BigEndian.Uint64(k)
 				var ev *Event[EV]
-				err := cbor.Unmarshal(v, &ev)
+				err := CBORUnmarshal(v, &ev)
 				if err != nil {
 					slog.Error("failed to deserialize event", "error", err, "eventId", id)
 					break
