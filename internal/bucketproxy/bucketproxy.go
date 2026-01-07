@@ -5,8 +5,8 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/go-softwarelab/common/pkg/types"
 	"github.com/google/btree"
+	"github.com/lymar/physalis/internal"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -451,12 +451,12 @@ func compare[T cmp.Ordered](a, b T) int {
 }
 
 func (bp *BucketProxy[K, V]) WriteProxyToDb() func(bucket *bolt.Bucket) error {
-	var toInsert []*types.Pair[[]byte, []byte]
+	var toInsert []*internal.Pair[[]byte, []byte]
 	var toDelete [][]byte
 
 	for e := range bp.proxyAscend() {
 		if e.exists {
-			toInsert = append(toInsert, types.NewPair(bp.serializeK(&e.key), bp.serializeV(e.data)))
+			toInsert = append(toInsert, internal.NewPair(bp.serializeK(&e.key), bp.serializeV(e.data)))
 		} else {
 			toDelete = append(toDelete, bp.serializeK(&e.key))
 		}

@@ -3,9 +3,8 @@ package physalis
 import (
 	"bytes"
 	"context"
+	"slices"
 	"testing"
-
-	"github.com/go-softwarelab/common/pkg/seq"
 )
 
 func TestWriteBackup(t *testing.T) {
@@ -38,14 +37,14 @@ func TestWriteBackup(t *testing.T) {
 		},
 	}
 
-	items := seq.FromSlice(itemsData)
+	items := slices.Values(itemsData)
 
 	err := writeBackup(context.Background(), &buf, 3, items)
 	if err != nil {
 		t.Fatalf("writeBackup failed: %v", err)
 	}
 
-	loadedItems := seq.Collect(loadBackup(&buf))
+	loadedItems := slices.Collect(loadBackup(&buf))
 	if len(loadedItems) != len(itemsData) {
 		t.Fatalf("expected %d items, got %d", len(itemsData), len(loadedItems))
 	}

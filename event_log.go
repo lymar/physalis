@@ -5,7 +5,7 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/go-softwarelab/common/pkg/types"
+	"github.com/lymar/physalis/internal"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -68,8 +68,8 @@ func loadEventsFromPos[EV any](
 	db *bolt.DB,
 	fromID uint64,
 	maxCount int,
-) <-chan types.Pair[uint64, *Event[EV]] {
-	out := make(chan types.Pair[uint64, *Event[EV]], 1024)
+) <-chan internal.Pair[uint64, *Event[EV]] {
+	out := make(chan internal.Pair[uint64, *Event[EV]], 1024)
 	go func() {
 		defer close(out)
 
@@ -93,7 +93,7 @@ func loadEventsFromPos[EV any](
 					slog.Error("failed to deserialize event", "error", err, "eventId", id)
 					break
 				}
-				out <- types.Pair[uint64, *Event[EV]]{Left: id, Right: ev}
+				out <- internal.Pair[uint64, *Event[EV]]{Left: id, Right: ev}
 				readed++
 				if readed >= maxCount {
 					break

@@ -11,7 +11,7 @@ import (
 
 	"github.com/DataDog/zstd"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-softwarelab/common/pkg/seq"
+	"github.com/lymar/itu"
 	"go.etcd.io/bbolt"
 	bolt "go.etcd.io/bbolt"
 )
@@ -136,7 +136,7 @@ func (phs *Physalis[EV]) backupTo(
 		}
 	}
 
-	return writeBackup(ctx, w, zstdCompressionLevel, seq.Concat(evsSeq, blobsSeq))
+	return writeBackup(ctx, w, zstdCompressionLevel, itu.Chain(evsSeq, blobsSeq))
 }
 
 func RestoreDatabase(

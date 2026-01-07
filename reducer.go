@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/go-softwarelab/common/pkg/types"
+	"github.com/lymar/physalis/internal"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -88,7 +88,7 @@ func (rh *reducerHandler[EV]) mainLoop(db *bolt.DB, init *sync.WaitGroup,
 func (rh *reducerHandler[EV]) doReduce(db *bolt.DB, cmd reduceCmd[EV]) {
 	defer cmd.activeReducers.Done()
 
-	byKeysMap := make(map[string][]types.Pair[uint64, *Event[EV]])
+	byKeysMap := make(map[string][]internal.Pair[uint64, *Event[EV]])
 
 	var latestEventId uint64 = 0
 
@@ -103,7 +103,7 @@ func (rh *reducerHandler[EV]) doReduce(db *bolt.DB, cmd reduceCmd[EV]) {
 		}
 		byKeysMap[groupKey] = append(
 			byKeysMap[groupKey],
-			types.Pair[uint64, *Event[EV]]{Left: uid, Right: ev})
+			internal.Pair[uint64, *Event[EV]]{Left: uid, Right: ev})
 	}
 
 	bname := []byte(rh.name)
@@ -128,7 +128,7 @@ func (rh *reducerHandler[EV]) doReduceKey(
 	bname []byte,
 	parentCmd *reduceCmd[EV],
 	groupKey string,
-	evs []types.Pair[uint64, *Event[EV]],
+	evs []internal.Pair[uint64, *Event[EV]],
 ) {
 	defer parentCmd.activeReducers.Done()
 
@@ -180,7 +180,7 @@ func (rh *reducerHandler[EV]) doReduceKey(
 	}
 }
 
-func evPairsSeq2[EV any](pairs []types.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
+func evPairsSeq2[EV any](pairs []internal.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
 	return func(yield func(uint64, *Event[EV]) bool) {
 		for _, p := range pairs {
 			if !yield(p.Left, p.Right) {
@@ -190,7 +190,7 @@ func evPairsSeq2[EV any](pairs []types.Pair[uint64, *Event[EV]]) iter.Seq2[uint6
 	}
 }
 
-func evChanSeq2[EV any](pairsChan <-chan types.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
+func evChanSeq2[EV any](pairsChan <-chan internal.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
 	return func(yield func(uint64, *Event[EV]) bool) {
 		for p := range pairsChan {
 			if !yield(p.Left, p.Right) {
