@@ -56,10 +56,19 @@ func newReducerHandler[ST any, EV any](
 	}
 }
 
+type emitter interface {
+	stateChanged(reducerName string, groupKey string)
+}
+
+type resultWriter struct {
+	toDb func(tx *bolt.Tx) error
+	emit func(em emitter)
+}
+
 type reduceCmd[EV any] struct {
 	activeReducers *sync.WaitGroup
 	readEvents     func() iter.Seq2[uint64, *Event[EV]]
-	writeResult    chan<- func(tx *bolt.Tx) error
+	writeResult    chan<- *resultWriter
 }
 
 func (rh *reducerHandler[EV]) mainLoop(db *bolt.DB, init *sync.WaitGroup,
@@ -103,28 +112,31 @@ func (rh *reducerHandler[EV]) doReduce(db *bolt.DB, cmd reduceCmd[EV]) {
 		}
 		byKeysMap[groupKey] = append(
 			byKeysMap[groupKey],
-			internal.Pair[uint64, *Event[EV]]{Left: uid, Right: ev})
+			internal.Pair[uint64, *Event[EV]]{A: uid, B: ev})
 	}
 
 	bname := []byte(rh.name)
 
 	if latestEventId != 0 {
 		rh.logPos = latestEventId
-		cmd.writeResult <- func(tx *bolt.Tx) error {
-			reducers := tx.Bucket(reducersBucket)
-			bucket := reducers.Bucket(bname)
-			return writeSystemValue(bucket, logPosKey, &latestEventId)
+		cmd.writeResult <- &resultWriter{
+			toDb: func(tx *bolt.Tx) error {
+				reducers := tx.Bucket(reducersBucket)
+				bucket := reducers.Bucket(bname)
+				return writeSystemValue(bucket, logPosKey, &latestEventId)
+			},
 		}
 	}
 
 	for groupKey, evs := range byKeysMap {
 		cmd.activeReducers.Add(1)
-		go rh.doReduceKey(db, bname, &cmd, groupKey, evs)
+		go rh.doReduceKey(db, rh.name, bname, &cmd, groupKey, evs)
 	}
 }
 
 func (rh *reducerHandler[EV]) doReduceKey(
 	db *bolt.DB,
+	name string,
 	bname []byte,
 	parentCmd *reduceCmd[EV],
 	groupKey string,
@@ -161,16 +173,21 @@ func (rh *reducerHandler[EV]) doReduceKey(
 		}
 
 		if !bytes.Equal(prevStateRaw, newStateRaw) {
-			parentCmd.writeResult <- func(tx *bolt.Tx) error {
-				reducers := tx.Bucket(reducersBucket)
-				bucket := reducers.Bucket(bname)
-				states := bucket.Bucket(statesBucket)
-				return states.Put(bGroupKey, newStateRaw)
+			parentCmd.writeResult <- &resultWriter{
+				toDb: func(tx *bolt.Tx) error {
+					reducers := tx.Bucket(reducersBucket)
+					bucket := reducers.Bucket(bname)
+					states := bucket.Bucket(statesBucket)
+					return states.Put(bGroupKey, newStateRaw)
+				},
+				emit: func(em emitter) {
+					em.stateChanged(name, groupKey)
+				},
 			}
 		}
 
 		for _, kvInst := range runtime.kvMaps {
-			parentCmd.writeResult <- kvInst.writeToDb()
+			parentCmd.writeResult <- kvInst.write()
 		}
 
 		return nil
@@ -183,7 +200,7 @@ func (rh *reducerHandler[EV]) doReduceKey(
 func evPairsSeq2[EV any](pairs []internal.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
 	return func(yield func(uint64, *Event[EV]) bool) {
 		for _, p := range pairs {
-			if !yield(p.Left, p.Right) {
+			if !yield(p.A, p.B) {
 				break
 			}
 		}
@@ -193,7 +210,7 @@ func evPairsSeq2[EV any](pairs []internal.Pair[uint64, *Event[EV]]) iter.Seq2[ui
 func evChanSeq2[EV any](pairsChan <-chan internal.Pair[uint64, *Event[EV]]) iter.Seq2[uint64, *Event[EV]] {
 	return func(yield func(uint64, *Event[EV]) bool) {
 		for p := range pairsChan {
-			if !yield(p.Left, p.Right) {
+			if !yield(p.A, p.B) {
 				break
 			}
 		}
@@ -274,7 +291,7 @@ func (rh *reducerHandler[EV]) initState(db *bolt.DB, latestLogPos uint64) error 
 
 		evChan := loadEventsFromPos[EV](db, rh.logPos+1, 64000)
 
-		resultChan := make(chan func(tx *bolt.Tx) error, 100)
+		resultChan := make(chan *resultWriter, 100)
 		var activeReducers sync.WaitGroup
 
 		activeReducers.Add(1)
@@ -292,8 +309,8 @@ func (rh *reducerHandler[EV]) initState(db *bolt.DB, latestLogPos uint64) error 
 		}()
 
 		var writers []func(tx *bolt.Tx) error
-		for writeFn := range resultChan {
-			writers = append(writers, writeFn)
+		for writer := range resultChan {
+			writers = append(writers, writer.toDb)
 		}
 
 		if err := db.Batch(func(tx *bolt.Tx) error {

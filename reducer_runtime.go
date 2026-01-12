@@ -24,8 +24,8 @@ type KType interface {
 }
 
 type kvMapData struct {
-	proxy     any
-	writeToDb func() func(writeTx *bolt.Tx) error
+	proxy any
+	write func() *resultWriter
 }
 
 func newReducerRuntime(db *bolt.DB, reducerName string, key string) *ReducerRuntime {
@@ -109,32 +109,34 @@ func OpenKV[K KType, V any](rr *ReducerRuntime, kvName string) SortedKV[K, V] {
 
 	rr.kvMaps[kvName] = kvMapData{
 		proxy: &bp,
-		writeToDb: func() func(writeTx *bolt.Tx) error {
+		write: func() *resultWriter {
 			writeProxyToDBFunc := bp.WriteProxyToDb()
 
-			return func(writeTx *bolt.Tx) error {
-				reducers := writeTx.Bucket(reducersBucket)
-				reducerBuck := reducers.Bucket([]byte(rr.reducerName))
-				kvsBuck, err := reducerBuck.CreateBucketIfNotExists(kvsBucket)
-				if err != nil {
-					return err
-				}
+			return &resultWriter{
+				toDb: func(writeTx *bolt.Tx) error {
+					reducers := writeTx.Bucket(reducersBucket)
+					reducerBuck := reducers.Bucket([]byte(rr.reducerName))
+					kvsBuck, err := reducerBuck.CreateBucketIfNotExists(kvsBucket)
+					if err != nil {
+						return err
+					}
 
-				eventGroupBucket, err := kvsBuck.CreateBucketIfNotExists([]byte(rr.key))
-				if err != nil {
-					return err
-				}
+					eventGroupBucket, err := kvsBuck.CreateBucketIfNotExists([]byte(rr.key))
+					if err != nil {
+						return err
+					}
 
-				bucket, err = eventGroupBucket.CreateBucketIfNotExists([]byte(kvName))
-				if err != nil {
-					return err
-				}
+					bucket, err = eventGroupBucket.CreateBucketIfNotExists([]byte(kvName))
+					if err != nil {
+						return err
+					}
 
-				if err := writeProxyToDBFunc(bucket); err != nil {
-					return err
-				}
+					if err := writeProxyToDBFunc(bucket); err != nil {
+						return err
+					}
 
-				return nil
+					return nil
+				},
 			}
 		},
 	}

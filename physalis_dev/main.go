@@ -31,6 +31,16 @@ func writeAndRead() {
 	}
 	defer phs.Close()
 
+	subCtx, subCtxCancel := context.WithCancel(context.Background())
+	defer subCtxCancel()
+	subsciption := reader.Subscribe(subCtx)
+
+	go func() {
+		for updatedKey := range subsciption {
+			slog.Debug("Subscription: state updated", "key", updatedKey)
+		}
+	}()
+
 	err = phs.Write(physalis.Transaction[TEvent]{
 		Events: []*physalis.Event[TEvent]{
 			{Payload: TEvent{Win: &Win{Player: "Alice", Points: 10}}},

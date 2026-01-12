@@ -187,7 +187,7 @@ func (phs *Physalis[EV]) procTransactions(
 ) {
 	readEvents := wrapEvents(txs, eventLog.latestID)
 
-	resultChan := make(chan func(tx *bolt.Tx) error, 1024)
+	resultChan := make(chan *resultWriter, 1024)
 	var activeReducers sync.WaitGroup
 
 	for _, rh := range phs.registry.reducers {
@@ -205,6 +205,17 @@ func (phs *Physalis[EV]) procTransactions(
 		close(resultChan)
 	}()
 
+	var writers []func(tx *bolt.Tx) error
+	var emitters []func(em emitter)
+	for writer := range resultChan {
+		if writer.toDb != nil {
+			writers = append(writers, writer.toDb)
+		}
+		if writer.emit != nil {
+			emitters = append(emitters, writer.emit)
+		}
+	}
+
 	if err := phs.db.Update(func(tx *bolt.Tx) error {
 		if err := blobStorApply(tx, txs); err != nil {
 			return err
@@ -214,8 +225,8 @@ func (phs *Physalis[EV]) procTransactions(
 			return err
 		}
 
-		for writeFn := range resultChan {
-			if err := writeFn(tx); err != nil {
+		for _, toDb := range writers {
+			if err := toDb(tx); err != nil {
 				return err
 			}
 		}
@@ -228,6 +239,12 @@ func (phs *Physalis[EV]) procTransactions(
 
 	for _, tx := range txs {
 		tx.done <- nil
+	}
+
+	if len(emitters) > 0 {
+		for _, emitFn := range emitters {
+			emitFn(phs.registry)
+		}
 	}
 }
 

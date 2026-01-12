@@ -1,12 +1,15 @@
 package physalis
 
 import (
+	"context"
+
 	bolt "go.etcd.io/bbolt"
 )
 
 type ReducerReader[ST any] struct {
 	name             string
 	deserializeState func(data []byte) (*ST, error)
+	subs             *registrySubscriptions
 }
 
 func (rr *ReducerReader[ST]) State(
@@ -65,4 +68,17 @@ func OpenKVView[K KType, V any, ST any](
 		serializeK:   serializeK,
 		deserializeK: deserializeK,
 	}
+}
+
+func (rr *ReducerReader[ST]) Subscribe(ctx context.Context) <-chan string {
+	rr.subs.mu.Lock()
+	defer rr.subs.mu.Unlock()
+
+	sub, ok := rr.subs.allKeysSubs[rr.name]
+	if !ok {
+		sub = newClientEmitter[string](16, false)
+		rr.subs.allKeysSubs[rr.name] = sub
+	}
+
+	return sub.subscribe(ctx)
 }

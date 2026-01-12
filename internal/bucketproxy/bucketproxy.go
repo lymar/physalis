@@ -470,7 +470,7 @@ func (bp *BucketProxy[K, V]) WriteProxyToDb() func(bucket *bolt.Bucket) error {
 			}
 		}
 		for _, ti := range toInsert {
-			err := bucket.Put(ti.Left, ti.Right)
+			err := bucket.Put(ti.A, ti.B)
 			if err != nil {
 				return err
 			}

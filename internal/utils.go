@@ -17,11 +17,11 @@ func TempFileName(prefix, suffix string) (string, error) {
 	return name, nil
 }
 
-type Pair[L, R any] struct {
-	Left  L
-	Right R
+type Pair[A, B any] struct {
+	A A
+	B B
 }
 
-func NewPair[L, R any](left L, right R) *Pair[L, R] {
-	return &Pair[L, R]{Left: left, Right: right}
+func NewPair[A, B any](a A, b B) *Pair[A, B] {
+	return &Pair[A, B]{A: a, B: b}
 }

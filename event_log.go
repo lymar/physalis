@@ -93,7 +93,7 @@ func loadEventsFromPos[EV any](
 					slog.Error("failed to deserialize event", "error", err, "eventId", id)
 					break
 				}
-				out <- internal.Pair[uint64, *Event[EV]]{Left: id, Right: ev}
+				out <- internal.Pair[uint64, *Event[EV]]{A: id, B: ev}
 				readed++
 				if readed >= maxCount {
 					break
