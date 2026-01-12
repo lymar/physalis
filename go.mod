@@ -7,7 +7,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.0
 	github.com/google/btree v1.1.3
 	github.com/lmittmann/tint v1.1.2
-	github.com/lymar/itu v0.3.1
+	github.com/lymar/itu v0.8.1
 	go.etcd.io/bbolt v1.4.3
 )
 
